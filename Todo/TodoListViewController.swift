@@ -9,21 +9,25 @@
 import UIKit
 
 class ToDoTableViewController: UITableViewController {
+    
+    let defaults = UserDefaults.standard
 
-    var dummyList = ["Do this", "Do that", "Et la suite"]
+    var toDoList = ["Do this", "Do that", "Et la suite"]
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        guard let List = defaults.value(forKey: "ToDoListArray") else { return }
+        toDoList = List as! [String]
     }
 
     //MARK: DataSource Methods for Table view controller
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return dummyList.count
+        return toDoList.count
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TodoItemCell", for: indexPath)
-        cell.textLabel?.text = dummyList[indexPath.row]
+        cell.textLabel?.text = toDoList[indexPath.row]
         return cell
     }
 
@@ -50,8 +54,9 @@ class ToDoTableViewController: UITableViewController {
         
         let action = UIAlertAction(title: "Ok", style: .default) { (action) in
             // Action once user pressed Ok button
-            self.dummyList.append(textField.text!)
+            self.toDoList.append(textField.text!)
             self.tableView.reloadData()
+            self.defaults.set(self.toDoList, forKey: "ToDoListArray")
         }
         
         // Add TextField, Action (button) and then Show Alert
