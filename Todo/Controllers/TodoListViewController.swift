@@ -7,32 +7,25 @@
 //
 
 import UIKit
+import CoreData
 
-class ToDoTableViewController: UITableViewController {
+class ToDoTableViewController: UITableViewController { // UISearchBarDelegate in extension bellow
     
-    let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
+    // Category selected
+    var selectedCategory : Category? {
+        didSet {
+            loadItems()
+        }
+    }
+    
+    // Set toDoList as array of Item defined in Core Data Entities
     var toDoList = [Item]()
+    
+    // Access to the persistent container of the App Delegate
+    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        // Add items to the List
-//        let newItem = Item()
-//        newItem.title = "First Item"
-//        newItem.done = false
-//        toDoList.append(newItem)
-//
-//        let newItem2 = Item()
-//        newItem2.title = "Second Item"
-//        newItem2.done = true
-//        toDoList.append(newItem2)
-        
-        // Used for UserDefaults storage
-//        guard let List = defaults.value(forKey: "ToDoListArray") else { return }
-//        toDoList = List as! [String]
-        
-        // Load Items from pList
-        loadItems()
     }
 
     //MARK: DataSource Methods for Table view controller
@@ -51,8 +44,16 @@ class ToDoTableViewController: UITableViewController {
     //MARK: Delegate Methods for Table view controller
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         
+        // Delete the clicked Cell
+        // Attention à l'ordre des actions pour gerer les index
+//        context.delete(toDoList[indexPath.row])
+//        toDoList.remove(at: indexPath.row)
+        
+        
+        // Change the done property to the opposite.
         toDoList[indexPath.row].done = !toDoList[indexPath.row].done
         tableView.deselectRow(at: indexPath, animated: true)
+        
         saveItems()
     }
     
@@ -60,54 +61,96 @@ class ToDoTableViewController: UITableViewController {
     @IBAction func addButtonPressed(_ sender: UIBarButtonItem) {
         
         var textField = UITextField()
-        
-        let alert = UIAlertController(title: "Nouveau To Do", message: "", preferredStyle: .alert)
+        let alert = UIAlertController(title: "New To Do", message: "", preferredStyle: .alert)
         
         let action = UIAlertAction(title: "Ok", style: .default) { (action) in
             // Action once user pressed Ok button
-            let new = Item()
-            new.title = textField.text!
-            self.toDoList.append(new)
-            
-            // Encode data for pList
+    
+            // Set newItem for CoreData (context)
+            let newItem = Item(context: self.context)
+            // Set default values for this newItem
+            newItem.title = textField.text!
+            newItem.done = false
+            newItem.category = self.selectedCategory
+            // Append to toDoList
+            self.toDoList.append(newItem)
+            // Save to DB
             self.saveItems()
- 
         }
         
         // Add TextField, Action (button) and then Show Alert
         
         alert.addAction(action)
         alert.addTextField { (alertTextField) in
-            alertTextField.placeholder = "Nouveau To Do"
+            alertTextField.placeholder = "New item"
             textField = alertTextField
         }
         present(alert, animated: true, completion: nil)
         
     }
     
+    //MARK: Core Data
+
     func saveItems() {
-        // Encode data for pList
-        let encoder = PropertyListEncoder()
         do {
-            let data = try encoder.encode(toDoList)
-            try data.write(to: dataFilePath!)
+            try context.save()
         } catch {
-            print("Encoding failed ! : \(error)")
+            print("Error saving context \(error)")
         }
         tableView.reloadData()
     }
     
-    func loadItems() {
-        // Encode data for pList
+    func loadItems(with request: NSFetchRequest<Item> = Item.fetchRequest(), and predicate: NSPredicate? = nil) {
+        // add predicate to grab only Items of selected Category
+        let categoryPredicate = NSPredicate(format: "category.name MATCHES %@", selectedCategory!.name!)
+        
+        if let additionalPredicate = predicate {
+            let compound = NSCompoundPredicate(andPredicateWithSubpredicates: [additionalPredicate, categoryPredicate])
+            request.predicate = compound
+        } else {
+            request.predicate = categoryPredicate
+        }
+
         do {
-            let data = try Data(contentsOf: dataFilePath!)
-            let decoder = PropertyListDecoder()
-            toDoList = try decoder.decode([Item].self, from: data)
+            toDoList = try context.fetch(request)
         } catch {
-            print("Loading data failed ! : \(error)")
+            print("Data fetch failed \(error)")
         }
         tableView.reloadData()
     }
+
+}
+
+//MARK: Search Bar methods
+extension ToDoTableViewController : UISearchBarDelegate {
     
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        // Create request
+        let request : NSFetchRequest<Item> = Item.fetchRequest()
+        print(request)
+        // Create predicate (query)
+        let predicate = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!) // [cd] = non sensitive to case & diacritic
+        // add the predicate (query) to the request
+//        request.predicate = predicate
+        // Create sort
+        let sort = NSSortDescriptor(key: "title", ascending: true)
+        // add sort to the request
+        request.sortDescriptors = [sort]
+        
+        // Launch request
+        loadItems(with: request, and: predicate)
+    }
+    
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        if searchBar.text!.count == 0 {
+            loadItems()
+            
+            // remove keyboard and cursor in text field
+            DispatchQueue.main.async {
+                searchBar.resignFirstResponder()
+            }
+            
+        }
+    }
 }
 
