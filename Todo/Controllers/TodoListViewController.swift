@@ -7,9 +7,12 @@
 //
 
 import UIKit
-import CoreData
+import RealmSwift
 
 class ToDoTableViewController: UITableViewController { // UISearchBarDelegate in extension bellow
+    
+    // Realm Init for the second time, so try! is possible
+    let realm = try! Realm()
     
     // Category selected
     var selectedCategory : Category? {
@@ -19,10 +22,7 @@ class ToDoTableViewController: UITableViewController { // UISearchBarDelegate in
     }
     
     // Set toDoList as array of Item defined in Core Data Entities
-    var toDoList = [Item]()
-    
-    // Access to the persistent container of the App Delegate
-    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+    var toDoList: Results<Item>?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -30,31 +30,39 @@ class ToDoTableViewController: UITableViewController { // UISearchBarDelegate in
 
     //MARK: DataSource Methods for Table view controller
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return toDoList.count
+        return toDoList?.count ?? 1
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TodoItemCell", for: indexPath)
         
-        cell.textLabel?.text = toDoList[indexPath.row].title
-        cell.accessoryType = toDoList[indexPath.row].done ? .checkmark : .none
+        if let item = toDoList?[indexPath.row] {
+            cell.textLabel?.text = item.title
+            cell.accessoryType = item.done ? .checkmark : .none
+            
+        } else {
+            cell.textLabel?.text = "No Items created yet"
+            cell.accessoryType = .none
+        }
         return cell
     }
 
     //MARK: Delegate Methods for Table view controller
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         
-        // Delete the clicked Cell
-        // Attention à l'ordre des actions pour gerer les index
-//        context.delete(toDoList[indexPath.row])
-//        toDoList.remove(at: indexPath.row)
-        
-        
         // Change the done property to the opposite.
-        toDoList[indexPath.row].done = !toDoList[indexPath.row].done
-        tableView.deselectRow(at: indexPath, animated: true)
+        if let item = toDoList?[indexPath.row] {
+            do {
+                try realm.write {
+                    item.done = !item.done
+                }
+            } catch {
+                print("Error saving Done status : \(error)")
+            }
+        }
         
-        saveItems()
+        tableView.reloadData()
+
     }
     
     //MARK: Add new items
@@ -66,16 +74,21 @@ class ToDoTableViewController: UITableViewController { // UISearchBarDelegate in
         let action = UIAlertAction(title: "Ok", style: .default) { (action) in
             // Action once user pressed Ok button
     
-            // Set newItem for CoreData (context)
-            let newItem = Item(context: self.context)
-            // Set default values for this newItem
-            newItem.title = textField.text!
-            newItem.done = false
-            newItem.category = self.selectedCategory
-            // Append to toDoList
-            self.toDoList.append(newItem)
-            // Save to DB
-            self.saveItems()
+            if let currentCategory = self.selectedCategory {
+                do {
+                    try self.realm.write {
+                        let newItem = Item()
+                        newItem.title = textField.text!
+                        newItem.creationDate = Date()
+                        currentCategory.items.append(newItem)
+                        self.realm.add(newItem)
+                    }
+                } catch {
+                    print("Error saving Item \(error)")
+                }
+            }
+
+            self.tableView.reloadData()
         }
         
         // Add TextField, Action (button) and then Show Alert
@@ -90,32 +103,10 @@ class ToDoTableViewController: UITableViewController { // UISearchBarDelegate in
     }
     
     //MARK: Core Data
-
-    func saveItems() {
-        do {
-            try context.save()
-        } catch {
-            print("Error saving context \(error)")
-        }
-        tableView.reloadData()
-    }
-    
-    func loadItems(with request: NSFetchRequest<Item> = Item.fetchRequest(), and predicate: NSPredicate? = nil) {
-        // add predicate to grab only Items of selected Category
-        let categoryPredicate = NSPredicate(format: "category.name MATCHES %@", selectedCategory!.name!)
+    func loadItems() {
         
-        if let additionalPredicate = predicate {
-            let compound = NSCompoundPredicate(andPredicateWithSubpredicates: [additionalPredicate, categoryPredicate])
-            request.predicate = compound
-        } else {
-            request.predicate = categoryPredicate
-        }
+        toDoList = selectedCategory?.items.sorted(byKeyPath: "title", ascending: true)
 
-        do {
-            toDoList = try context.fetch(request)
-        } catch {
-            print("Data fetch failed \(error)")
-        }
         tableView.reloadData()
     }
 
@@ -125,20 +116,9 @@ class ToDoTableViewController: UITableViewController { // UISearchBarDelegate in
 extension ToDoTableViewController : UISearchBarDelegate {
     
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
-        // Create request
-        let request : NSFetchRequest<Item> = Item.fetchRequest()
-        print(request)
-        // Create predicate (query)
-        let predicate = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!) // [cd] = non sensitive to case & diacritic
-        // add the predicate (query) to the request
-//        request.predicate = predicate
-        // Create sort
-        let sort = NSSortDescriptor(key: "title", ascending: true)
-        // add sort to the request
-        request.sortDescriptors = [sort]
         
-        // Launch request
-        loadItems(with: request, and: predicate)
+        toDoList = toDoList?.filter("title CONTAINS[cd] %@", searchBar.text!).sorted(byKeyPath: "creationDate", ascending: true)
+        tableView.reloadData()   
     }
     
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {

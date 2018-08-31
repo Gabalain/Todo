@@ -7,15 +7,16 @@
 //
 
 import UIKit
-import CoreData
+import RealmSwift
 
 class CategoryTableViewController: UITableViewController {
 
-    // Set categoriesList as array of Category defined in Core Data Entities
-    var categoryList = [Category]()
+    // Realm Init for the second time, so try! is possible
+    let realm = try! Realm()
     
-    // Access to the persistent container of the App Delegate
-    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+    // Set categoriesList as array of Category defined in Core Data Entities
+    var categoryList: Results<Category>?
+    
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -28,13 +29,13 @@ class CategoryTableViewController: UITableViewController {
     
     //MARK: DataSource Methods for Table view controller
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return categoryList.count
+        return categoryList?.count ?? 1
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "CategoryCell", for: indexPath)
         
-        cell.textLabel?.text = categoryList[indexPath.row].name
+        cell.textLabel?.text = categoryList?[indexPath.row].name ?? "No category added yet"
         return cell
     }
     
@@ -45,7 +46,7 @@ class CategoryTableViewController: UITableViewController {
             let itemsListVC = segue.destination as! ToDoTableViewController
             
             guard let indexPath = tableView.indexPathForSelectedRow else {return}
-            itemsListVC.selectedCategory = categoryList[indexPath.row]
+            itemsListVC.selectedCategory = categoryList?[indexPath.row]
         }
     }
     
@@ -65,13 +66,13 @@ class CategoryTableViewController: UITableViewController {
             // Action once user pressed Ok button
             
             // Set newItem for CoreData (context)
-            let newCategory = Category(context: self.context)
+            let newCategory = Category()
             // Set default values for this newItem
             newCategory.name = textField.text!
             // Append to categoryList
-            self.categoryList.append(newCategory)
+ //           self.categoryList.append(newCategory) // Automatically done in Realm Results data Types
             // Save to DB
-            self.saveCategories()
+            self.save(category: newCategory)
         }
         
         // Add TextField, Action (button) and then Show Alert
@@ -86,29 +87,22 @@ class CategoryTableViewController: UITableViewController {
     
     //MARK: Core Data
     
-    func saveCategories() {
+    func save(category: Category) {
         do {
-            try context.save()
+            try realm.write {
+                realm.add(category)
+            }
         } catch {
-            print("Error saving context \(error)")
+            print("Error saving Category \(error)")
         }
+        
         tableView.reloadData()
     }
     
     func loadCategories() {
-        let request : NSFetchRequest<Category> = Category.fetchRequest()
-        do {
-            categoryList = try context.fetch(request)
-        } catch {
-            print("Data fetch failed \(error)")
-        }
+        // Fetch data from Realm DB
+        categoryList = realm.objects(Category.self)
+    
         tableView.reloadData()
     }
-
-    
-    //MARK: Tableview DataSource Methods
-    
-    //MARK: Tableview Delegate Methods
-    
-    //MARK: Data manipulation methods
 }
